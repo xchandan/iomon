@@ -297,15 +297,15 @@ def main():
     
     try:
         while True:
-            # Clear screen
-            os.system('clear' if os.name == 'posix' else 'cls')
-            
             # Get current stats
             processes = get_process_io(prev_processes)
             disk_stats = get_disk_stats()
             
             # Calculate disk deltas
             disk_delta = get_delta(disk_stats, prev_disk_stats)
+            
+            # Clear screen
+            os.system('clear' if os.name == 'posix' else 'cls')
             
             # Print
             print(print_process_io(processes, disk_delta, args.interval))

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Process I/O Monitor - Display PID, Read IO/s, Write IO/s, IOPS, and Process Name
+Process I/O Monitor - Display PID, Read IO/s, Write IO/s, calls, and Process Name
 """
 
 import os
@@ -69,18 +69,18 @@ def format_bytes(bytes_val):
     else:
         return f"{bytes_val}B"
 
-def format_iops(iops):
+def format_calls(calls):
     """
-    Format IOPS for display
+    Format calls for display
     """
-    if iops == 0:
+    if calls == 0:
         return "0"
-    elif iops >= 1000000:
-        return f"{iops/1000000:.2f}M"
-    elif iops >= 1000:
-        return f"{iops/1000:.2f}K"
+    elif calls >= 1000000:
+        return f"{calls/1000000:.2f}M"
+    elif calls >= 1000:
+        return f"{calls/1000:.2f}K"
     else:
-        return f"{iops:.1f}"
+        return f"{calls:.1f}"
 
 def format_throughput(bytes_per_sec):
     """
@@ -99,9 +99,9 @@ def print_process_io(processes_io, interval, show_all=False):
     """
     Print I/O statistics for processes
     """
-    if not processes_io:
-        print("  No processes with I/O activity found")
-        return
+    # if not processes_io:
+    #     print("  No processes with I/O activity found")
+    #     return
     
     # Sort by total I/O (read + write) descending
     sorted_processes = sorted(processes_io, key=lambda x: x['total_bytes_per_sec'], reverse=True)
@@ -110,50 +110,46 @@ def print_process_io(processes_io, interval, show_all=False):
     print("\n" + "=" * 120)
     print(f"  PROCESS I/O STATISTICS (since last {interval:.1f}s interval)")
     print("=" * 120)
-    print(f"\n  {'PID':<8} {'Read IOPS':<12} {'Write IOPS':<13} {'Read MB/s':<12} {'Write MB/s':<12} "
+    print(f"\n  {'PID':<8} {'Read Calls/s':<13} {'Write Calls/s':<14} {'Read MB/s':<12} {'Write MB/s':<12} "
           f"{'Read B/s':<14} {'Write B/s':<14} {'Name':<20}")
     print("  " + "-" * 120)
     
     count = 0
     for proc in sorted_processes:
-        # Skip processes with zero I/O unless show_all is True
         if not show_all and proc['read_bytes_per_sec'] == 0 and proc['write_bytes_per_sec'] == 0:
             continue
         
-        # Limit to top 20 if show_all is False
         if not show_all and count >= 20:
             print("  ... (showing top 20, use --all to see all)")
             break
         
-        read_iops = format_iops(proc['read_iops'])
-        write_iops = format_iops(proc['write_iops'])
+        read_calls = format_calls(proc['read_calls_per_sec'])
+        write_calls = format_calls(proc['write_calls_per_sec'])
         read_throughput = format_throughput(proc['read_bytes_per_sec'])
         write_throughput = format_throughput(proc['write_bytes_per_sec'])
         read_mb_s = proc['read_bytes_per_sec'] / (1024 * 1024)
         write_mb_s = proc['write_bytes_per_sec'] / (1024 * 1024)
         
-        # Truncate name if too long
         name = proc['name']
         if len(name) > 20:
             name = name[:17] + "..."
         
-        print(f"  {proc['pid']:<8} {read_iops:<12} {write_iops:<13} "
+        print(f"  {proc['pid']:<8} {read_calls:<13} {write_calls:<14} "
               f"{read_mb_s:>8.2f}     {write_mb_s:>8.2f}     "
               f"{read_throughput:<14} {write_throughput:<14} {name:<20}")
         count += 1
     
-    # Display total counts
     total_read = sum(p['read_bytes_per_sec'] for p in sorted_processes)
     total_write = sum(p['write_bytes_per_sec'] for p in sorted_processes)
-    total_read_iops = format_iops(sum(p['read_iops'] for p in sorted_processes))
-    total_write_iops = format_iops(sum(p['write_iops'] for p in sorted_processes))
+    total_read_calls = format_calls(sum(p['read_calls_per_sec'] for p in sorted_processes))
+    total_write_calls = format_calls(sum(p['write_calls_per_sec'] for p in sorted_processes))
     total_read_mb_s = total_read / (1024 * 1024)
     total_write_mb_s = total_write / (1024 * 1024)
     total_read_throughput = format_throughput(total_read)
     total_write_throughput = format_throughput(total_write)
     
     print("  " + "-" * 120)
-    print(f"  {'Total':<8} {total_read_iops:<12} {total_write_iops:<13} "
+    print(f"  {'Total':<8} {total_read_calls:<13} {total_write_calls:<14} "
           f"{total_read_mb_s:>8.2f}     {total_write_mb_s:>8.2f}     "
           f"{total_read_throughput:<14} {total_write_throughput:<14}")
     print("=" * 120)
@@ -236,8 +232,8 @@ def main():
                         
                         read_per_sec = read_delta / args.interval
                         write_per_sec = write_delta / args.interval
-                        read_iops = syscr_delta / args.interval
-                        write_iops = syscw_delta / args.interval
+                        read_calls_per_sec = syscr_delta / args.interval
+                        write_calls_per_sec = syscw_delta / args.interval
                         
                         # Only include processes with non-zero I/O (for display)
                         if read_per_sec > 0 or write_per_sec > 0 or args.all:
@@ -246,9 +242,9 @@ def main():
                                 'read_bytes_per_sec': read_per_sec,
                                 'write_bytes_per_sec': write_per_sec,
                                 'total_bytes_per_sec': read_per_sec + write_per_sec,
-                                'read_iops': read_iops,
-                                'write_iops': write_iops,
-                                'total_iops': read_iops + write_iops,
+                                'read_calls_per_sec': read_calls_per_sec,
+                                'write_calls_per_sec': write_calls_per_sec,
+                                'total_calls_per_sec': read_calls_per_sec + write_calls_per_sec,
                                 'name': stats['name']
                             })
             
