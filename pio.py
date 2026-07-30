@@ -56,6 +56,50 @@ def get_all_processes():
             continue
     return pids
 
+def get_disk_stats():
+    """Get disk I/O statistics"""
+    disk_stats = {}
+    try:
+        with open('/proc/diskstats', 'r') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 14:
+                    dev = parts[2]
+                    # Skip loop devices
+                    if not dev.startswith('loop'):
+                        # Handle NVMe partitions
+                        if dev.startswith('nvme') and 'p' in dev:
+                            # Skip partitions, only track main device
+                            if not dev.split('p')[0] == dev:
+                                continue
+                        # Skip partition numbers for SCSI/SATA
+                        if dev.startswith('sd') and len(dev) > 3 and dev[3:].isdigit():
+                            continue
+                        
+                        read_bytes = int(parts[5]) * 512
+                        write_bytes = int(parts[9]) * 512
+                        disk_stats[dev] = {
+                            'read_bytes': read_bytes,
+                            'write_bytes': write_bytes
+                        }
+    except:
+        pass
+    return disk_stats
+
+def get_delta(current, previous):
+    """Calculate delta between current and previous stats"""
+    delta = {}
+    if not previous:
+        return delta
+    
+    for key in current:
+        if key in previous:
+            delta[key] = {
+                'read_bytes': current[key]['read_bytes'] - previous[key]['read_bytes'],
+                'write_bytes': current[key]['write_bytes'] - previous[key]['write_bytes']
+            }
+    return delta
+
 def format_bytes(bytes_val):
     """
     Format bytes into human-readable format
@@ -95,10 +139,31 @@ def format_throughput(bytes_per_sec):
     else:
         return f"{bytes_per_sec:.1f} B/s"
 
-def print_process_io(processes_io, interval, show_all=False):
+def print_process_io(processes_io, interval, show_all=False, disk_delta=None):
     """
     Print I/O statistics for processes
     """
+
+    lines = []
+    # Show disk I/O summary
+    if disk_delta:
+        lines.append("\nDISK I/O SUMMARY")
+        lines.append("-" * 50)
+        lines.append(f"{'DISK':<15} {'READ/s':>15} {'WRITE/s':>15}")
+        lines.append("-" * 50)
+        has_activity = False
+        for disk, delta in disk_delta.items():
+            read_rate = delta['read_bytes'] / interval if interval > 0 else 0
+            write_rate = delta['write_bytes'] / interval if interval > 0 else 0
+            if read_rate > 0 or write_rate > 0:
+                lines.append(f"{disk:<15} {format_bytes(read_rate):>15}/s {format_bytes(write_rate):>15}/s")
+                has_activity = True
+        
+        if not has_activity:
+            lines.append(f"{'No disk I/O activity':>15}")
+    
+    lines.append("")
+    print('\n'.join(lines))
     # if not processes_io:
     #     print("  No processes with I/O activity found")
     #     return
@@ -107,12 +172,12 @@ def print_process_io(processes_io, interval, show_all=False):
     sorted_processes = sorted(processes_io, key=lambda x: x['total_bytes_per_sec'], reverse=True)
     
     # Display header
-    print("\n" + "=" * 120)
+    print("\n" + "=" * 80)
     print(f"  PROCESS I/O STATISTICS (since last {interval:.1f}s interval)")
-    print("=" * 120)
-    print(f"\n  {'PID':<8} {'Read Calls/s':<13} {'Write Calls/s':<14} {'Read MB/s':<12} {'Write MB/s':<12} "
+    print("=" * 80)
+    print(f"\n  {'PID':<8} {'Read Calls/s':<13} {'Write Calls/s':<14} "
           f"{'Read B/s':<14} {'Write B/s':<14} {'Name':<20}")
-    print("  " + "-" * 120)
+    print("  " + "-" * 78)
     
     count = 0
     for proc in sorted_processes:
@@ -127,15 +192,12 @@ def print_process_io(processes_io, interval, show_all=False):
         write_calls = format_calls(proc['write_calls_per_sec'])
         read_throughput = format_throughput(proc['read_bytes_per_sec'])
         write_throughput = format_throughput(proc['write_bytes_per_sec'])
-        read_mb_s = proc['read_bytes_per_sec'] / (1024 * 1024)
-        write_mb_s = proc['write_bytes_per_sec'] / (1024 * 1024)
         
         name = proc['name']
         if len(name) > 20:
             name = name[:17] + "..."
         
         print(f"  {proc['pid']:<8} {read_calls:<13} {write_calls:<14} "
-              f"{read_mb_s:>8.2f}     {write_mb_s:>8.2f}     "
               f"{read_throughput:<14} {write_throughput:<14} {name:<20}")
         count += 1
     
@@ -148,11 +210,10 @@ def print_process_io(processes_io, interval, show_all=False):
     total_read_throughput = format_throughput(total_read)
     total_write_throughput = format_throughput(total_write)
     
-    print("  " + "-" * 120)
+    print("  " + "-" * 78)
     print(f"  {'Total':<8} {total_read_calls:<13} {total_write_calls:<14} "
-          f"{total_read_mb_s:>8.2f}     {total_write_mb_s:>8.2f}     "
           f"{total_read_throughput:<14} {total_write_throughput:<14}")
-    print("=" * 120)
+    print("=" * 80)
 
 def clear_screen():
     """Clear the terminal screen"""
@@ -183,6 +244,7 @@ def main():
     # Store previous I/O stats
     prev_io = {}
     iteration = 0
+    prev_disk_stats = {}
     
     try:
         while True:
@@ -207,6 +269,12 @@ def main():
                         'syscw': syscw,
                         'name': name
                     }
+            
+            # Get current disk stats
+            disk_stats = get_disk_stats()
+
+            # Calculate disk deltas
+            disk_delta = get_delta(disk_stats, prev_disk_stats)
             
             # Calculate rates
             processes_io = []
@@ -257,7 +325,7 @@ def main():
             print(f"  Time: {timestamp}  |  Iteration: {iteration}")
             
             # Print statistics
-            print_process_io(processes_io, args.interval, args.all)
+            print_process_io(processes_io, args.interval, args.all, disk_delta)
             
             # Check if we need to exit
             if args.count > 0 and iteration >= args.count:
@@ -265,6 +333,7 @@ def main():
             
             # Store current stats for next iteration
             prev_io = current_io
+            prev_disk_stats = disk_stats
             
             # Wait for the next interval
             time.sleep(args.interval)
