@@ -90,26 +90,24 @@ def format_throughput(bytes_per_sec):
     """
     return f"{format_bytes(bytes_per_sec)}/s"
 
-def print_process_io(processes_io, interval, max_count=10):
+def get_process_io_lines(processes_io, interval, max_count=10):
     """
-    Print I/O statistics for processes
+    Return I/O statistics for processes as a list of strings
     """
+    lines = []
     
     # Sort by total I/O (read + write) descending
     sorted_processes = sorted(processes_io, key=lambda x: x['total_bytes_per_sec'], reverse=True)
     
     # Display header
-    print(f"\nPROCESS I/O STATISTICS")
-    print("-" * 80)
-    print(f"{'PID':<8} {'Read Calls/s':<13} {'Write Calls/s':<14} "
-          f"{'Read B/s':<14} {'Write B/s':<14} {'Name':<20}")
-    print("-" * 80)
+    lines.append(f"\nPROCESS I/O STATISTICS")
+    lines.append("-" * 80)
+    lines.append(f"{'PID':<8} {'Read Calls/s':<13} {'Write Calls/s':<14} "
+                 f"{'Read B/s':<14} {'Write B/s':<14} {'Name':<20}")
+    lines.append("-" * 80)
     
     count = 0
     for proc in sorted_processes:
-        #if proc['read_bytes_per_sec'] == 0 and proc['write_bytes_per_sec'] == 0:
-        #    continue
-        
         if count >= max_count:
             break
         
@@ -122,8 +120,8 @@ def print_process_io(processes_io, interval, max_count=10):
         if len(name) > 20:
             name = name[:17] + "..."
         
-        print(f"{proc['pid']:<8} {read_calls:<13} {write_calls:<14} "
-              f"{read_throughput:<14} {write_throughput:<14} {name:<20}")
+        lines.append(f"{proc['pid']:<8} {read_calls:<13} {write_calls:<14} "
+                    f"{read_throughput:<14} {write_throughput:<14} {name:<20}")
         count += 1
     
     total_read = sum(p['read_bytes_per_sec'] for p in sorted_processes)
@@ -135,6 +133,7 @@ def print_process_io(processes_io, interval, max_count=10):
     total_read_throughput = format_throughput(total_read)
     total_write_throughput = format_throughput(total_write)
     
+    return lines
 
 def read_cpu_stats():
     """
@@ -434,22 +433,22 @@ def calculate_disk_metrics(stats1, stats2, interval):
     
     return metrics
 
-def format_disk_metrics(metrics):
+def get_disk_lines(metrics):
     """
-    Format disk metrics for display
+    Return disk metrics as a list of strings
     """
     if not metrics:
-        return "  No disk metrics available"
+        return ["  No disk metrics available"]
     
-    output = []
-    output.append("\nDISK I/O STATISTICS")
-    output.append("-" * 80)
-    output.append(f"{'Device':<10} {'Read IOPS':<10} {'Write IOPS':<10} {'Total IOPS':<10} "
-                  f"{'Read MB/s':<10} {'Write MB/s':<10} {'Util%':<8} {'Avg Q'}")
-    output.append("-" * 80)
+    lines = []
+    lines.append("\nDISK I/O STATISTICS")
+    lines.append("-" * 80)
+    lines.append(f"{'Device':<10} {'Read IOPS':<10} {'Write IOPS':<10} {'Total IOPS':<10} "
+                 f"{'Read MB/s':<10} {'Write MB/s':<10} {'Util%':<8} {'Avg Q'}")
+    lines.append("-" * 80)
     
     for device, stats in sorted(metrics.items()):
-        output.append(
+        lines.append(
             f"{device:<10} "
             f"{stats['read_iops']:<10.1f} "
             f"{stats['write_iops']:<10.1f} "
@@ -460,29 +459,29 @@ def format_disk_metrics(metrics):
             f"{stats['avg_queue_size']:<6.2f}"
         )
     
-    return '\n'.join(output)
+    return lines
 
-def print_cpu_metrics(cpu_metrics):
-    """Print CPU metrics in a formatted way"""
+def get_cpu_lines(cpu_metrics):
+    """Return CPU metrics as a list of strings"""
     if not cpu_metrics:
-        return "  CPU metrics not available"
+        return ["  CPU metrics not available"]
     
-    output = []
-    output.append(f"{'CPU USAGE':<15}: "
-                  f"{'User':<5} {cpu_metrics['user']:>3.1f}% "
-                  f"{'Sys':<5} {cpu_metrics['system']:>3.1f}% "
-                  f"{'IOwt':<5} {cpu_metrics['iowait']:>3.1f}% "
-                  f"{'Idle':<5} {cpu_metrics['idle']:>3.1f}% "
-                  f"{'Used':<5} {cpu_metrics['total_used']:>3.1f}%")
+    lines = []
+    lines.append(f"{'CPU USAGE':<15}: "
+                f"{'User':<5} {cpu_metrics['user']:>3.1f}% "
+                f"{'Sys':<5} {cpu_metrics['system']:>3.1f}% "
+                f"{'IOwt':<5} {cpu_metrics['iowait']:>3.1f}% "
+                f"{'Idle':<5} {cpu_metrics['idle']:>3.1f}% "
+                f"{'Used':<5} {cpu_metrics['total_used']:>3.1f}%")
 
-    return '\n'.join(output)
+    return lines
 
-def print_memory_metrics(mem_stats):
-    """Print memory metrics in a formatted way"""
+def get_memory_lines(mem_stats):
+    """Return memory metrics as a list of strings"""
     if not mem_stats:
-        return "  Memory metrics not available"
+        return ["  Memory metrics not available"]
     
-    output = []
+    lines = []
 
     # Memory
     mem_total = format_bytes(mem_stats.get('MemTotal', 0))
@@ -490,11 +489,11 @@ def print_memory_metrics(mem_stats):
     mem_available = format_bytes(mem_stats.get('MemAvailable', 0))
     mem_used_pct = mem_stats.get('MemUsedPercent', 0)
     
-    output.append(f"{'MEMORY USAGE':<15}: "
-                  f"{'Total':<5} {mem_total:>8} "
-                  f"{'Used':<5} {mem_used:>8} "
-                  f"{'Avail':<5} {mem_available:>8} "
-                  f"{'Used%':<5} {mem_used_pct:>6.1f}%")
+    lines.append(f"{'MEMORY USAGE':<15}: "
+                f"{'Total':<5} {mem_total:>8} "
+                f"{'Used':<5} {mem_used:>8} "
+                f"{'Avail':<5} {mem_available:>8} "
+                f"{'Used%':<5} {mem_used_pct:>6.1f}%")
 
     # Swap
     swap_total = format_bytes(mem_stats.get('SwapTotal', 0))
@@ -504,37 +503,36 @@ def print_memory_metrics(mem_stats):
                                  - mem_stats.get('SwapUsed', 0))
         swap_used_pct = mem_stats.get('SwapUsedPercent', 0)
         
-        output.append(f"{'SWAP USAGE':<15}: "
-                      f"{'Total':<5} {swap_total:>8} "
-                      f"{'Used':<5} {swap_used:>8} "
-                      f"{'Free':<5} {swap_free:>8} "
-                      f"{'Used%':<5} {swap_used_pct:>6.1f}%")
+        lines.append(f"{'SWAP USAGE':<15}: "
+                    f"{'Total':<5} {swap_total:>8} "
+                    f"{'Used':<5} {swap_used:>8} "
+                    f"{'Free':<5} {swap_free:>8} "
+                    f"{'Used%':<5} {swap_used_pct:>6.1f}%")
 
-    
-    return '\n'.join(output)
+    return lines
 
-def print_load_avg(load1, load5, load15, running, blocked, total):
-    """Print load average in a formatted way"""
-    output = []
-    output.append(f"{'TIME':<15}: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    output.append(f"{'HOSTNAME':<15}: {socket.gethostname()}")
-    output.append(f"{'TASKS':<15}: "
-                  f"{running}[Running]/{blocked}[Blocked]/{total}[Total]")
-    output.append(f"{'LOAD AVERAGE':<15}: "
-                  f"{load1:<6.2f} "
-                  f"{load5:<6.2f} "
-                  f"{load15:<6.2f}")
+def get_load_lines(load1, load5, load15, running, blocked, total):
+    """Return load average as a list of strings"""
+    lines = []
+    lines.append(f"{'TIME':<15}: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"{'HOSTNAME':<15}: {socket.gethostname()}")
+    lines.append(f"{'TASKS':<15}: "
+                f"{running}[Running]/{blocked}[Blocked]/{total}[Total]")
+    lines.append(f"{'LOAD AVERAGE':<15}: "
+                f"{load1:<6.2f} "
+                f"{load5:<6.2f} "
+                f"{load15:<6.2f}")
 
-    
-    return '\n'.join(output)
+    return lines
 
-def print_io_psi(avg10, avg60, avg300, total):
-    output = []
-    output.append(f"{'I/O PSI':<15}: "
-                  f"{avg10:<6.2f} "
-                  f"{avg60:<6.2f} "
-                  f"{avg300:<6.2f}")
-    return '\n'.join(output)
+def get_psi_lines(avg10, avg60, avg300, total):
+    """Return PSI metrics as a list of strings"""
+    lines = []
+    lines.append(f"{'I/O PSI':<15}: "
+                f"{avg10:<6.2f} "
+                f"{avg60:<6.2f} "
+                f"{avg300:<6.2f}")
+    return lines
 
 def main():
     # Set the interval between measurements (in seconds)
@@ -566,33 +564,36 @@ def main():
             # Clear screen for better display
             clear_screen()
 
-            # Print header
-            print("SYSTEM INFO")
-            print(separator)
+            # Initialize output buffer
+            output_lines = []
+            
+            # Add header
+            output_lines.append("SYSTEM INFO")
+            output_lines.append(separator)
 
             # --- CPU Metrics ---
             stats2, procs_blocked = read_cpu_stats()
 
             # --- Load Average ---
             load1, load5, load15, running, total = get_load_avg()
-            print(print_load_avg(load1, load5, load15, running, procs_blocked, total))
+            output_lines.extend(get_load_lines(load1, load5, load15, running, procs_blocked, total))
 
             # Read PSI I/O metrics
             avg10, avg60, avg300, total = read_psi_io()
-            print(print_io_psi(avg10, avg60, avg300, total))
+            output_lines.extend(get_psi_lines(avg10, avg60, avg300, total))
 
-            print()
+            output_lines.append("")
             cpu_metrics = get_cpu_percent(stats1, stats2)
-            print(print_cpu_metrics(cpu_metrics))
+            output_lines.extend(get_cpu_lines(cpu_metrics))
 
             # --- Memory Metrics ---
             mem_stats = get_memory_stats()
-            print(print_memory_metrics(mem_stats))
+            output_lines.extend(get_memory_lines(mem_stats))
 
             # --- Disk I/O Metrics ---
             disk_stats2 = get_disk_stats()
             disk_metrics = calculate_disk_metrics(disk_stats1, disk_stats2, interval)
-            print(format_disk_metrics(disk_metrics))
+            output_lines.extend(get_disk_lines(disk_metrics))
             
             pids = get_all_processes()
             
@@ -649,7 +650,10 @@ def main():
                             })
                             
             # Print statistics
-            print_process_io(processes_io, interval)
+            output_lines.extend(get_process_io_lines(processes_io, interval))
+
+            # Print everything at once
+            print('\n'.join(output_lines))
 
             # Shift the stats for the next iteration
             stats1 = stats2
