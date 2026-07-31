@@ -1,37 +1,40 @@
 ```
 SYSTEM INFO
 -------------------------------------------------------------------------------------
-
+TIME           : 2026-07-31 09:21:14
 HOSTNAME       : chandan-FRI-FXX
-LOAD AVERAGE   : 0.35   0.52   0.57  
-TASKS          : 3[Running]/0[Blocked]/1928[Total]
-CPU USAGE      : User  0.6% Sys   0.3% IOwt  0.1% Idle  99.0% Used  1.0%
-MEMORY USAGE   : Total  15.33G Used    6.35G Avail   8.98G Used%   41.4%
-SWAP USAGE     : Total   4.00G Used    0.57G Free    3.43G Used%   14.2%
-
-═════════════════════════════════════════════════════════════════════════════════════
+LOAD AVERAGE   : 0.47   0.55   0.54  
+TASKS          : 1[Running]/0[Blocked]/2078[Total]
+CPU USAGE      : User  1.8% Sys   1.0% IOwt  0.1% Idle  97.1% Used  2.9%
+MEMORY USAGE   : Total  15.33G Used    7.00G Avail   8.33G Used%   45.7%
+SWAP USAGE     : Total   4.00G Used    0.56G Free    3.44G Used%   14.0%
 
 DISK I/O STATISTICS
 --------------------------------------------------------------------------------
 Device     Read IOPS  Write IOPS Total IOPS Read MB/s  Write MB/s Util%    Avg Q
 --------------------------------------------------------------------------------
-nvme0n1    0.0        12.0       12.0       0.00       0.05       1.90    % 0.23  
+nvme0n1    0.0        1.0        1.0        0.00       0.03       0.73    % 0.01  
 
-═════════════════════════════════════════════════════════════════════════════════════
-
-SYSTEM I/O METRICS
+SYSTEM I/O STATISTICS
 -------------------------------------------------------------------------------------
-Timestamp            %iowait    Blocked    PSI IO 10s   PSI IO 60s   PSI IO 300s
+%iowait    Blocked    PSI IO 10s   PSI IO 60s   PSI IO 300s
 -------------------------------------------------------------------------------------
-2026-07-26 18:15:15    0.08%          0        0.00%        0.00%        0.00%
+  0.08%          0        0.00%        0.00%        0.00%
 
-═════════════════════════════════════════════════════════════════════════════════════
-
-BLOCKED PROCESSES (Uninterruptible Sleep - 'D' state)
--------------------------------------------------------------------------------------
-  Found 1 blocked process(es):
-
-  PID      PPID     State I/O Read        I/O Write       Waiting On      Name
-  -------- -------- ----- --------------- --------------- --------------- ----------
-  413416   2        D     0B              0B              unknown         kworker/u25:0+i915_flip
+PROCESS I/O STATISTICS
+--------------------------------------------------------------------------------
+PID      Read Calls/s  Write Calls/s  Read B/s       Write B/s      Name                
+--------------------------------------------------------------------------------
+911      0             0              0.0 B/s        18.00 KB/s     jbd2/nvme0n1p5-8    
+435      0             0              0.0 B/s        12.00 KB/s     jbd2/nvme0n1p10-8   
+1        0.5           0              0.0 B/s        0.0 B/s        systemd             
+489      0             0              0.0 B/s        0.0 B/s        systemd-journal     
+548      0             0              0.0 B/s        0.0 B/s        systemd-udevd       
+1210     13.0          0              0.0 B/s        0.0 B/s        systemd-oomd        
+1211     0             0              0.0 B/s        0.0 B/s        systemd-resolve     
+1212     0             0              0.0 B/s        0.0 B/s        systemd-timesyn     
+1224     0             0              0.0 B/s        0.0 B/s        avahi-daemon        
+1225     0             0              0.0 B/s        0.0 B/s        bluetoothd          
+^C
+Exiting...
 ```

@@ -7,6 +7,138 @@ import socket
 import subprocess
 from datetime import datetime
 
+def get_process_io(pid):
+    """
+    Read I/O statistics for a process from /proc/[pid]/io
+    Returns a tuple of (read_bytes, write_bytes, syscr, syscw) or zeros if unavailable
+    """
+    try:
+        with open(f'/proc/{pid}/io', 'r') as f:
+            read_bytes = 0
+            write_bytes = 0
+            syscr = 0  # read I/O operations count
+            syscw = 0  # write I/O operations count
+            for line in f:
+                if line.startswith('read_bytes:'):
+                    read_bytes = int(line.split()[1])
+                elif line.startswith('write_bytes:'):
+                    write_bytes = int(line.split()[1])
+                elif line.startswith('syscr:'):
+                    syscr = int(line.split()[1])
+                elif line.startswith('syscw:'):
+                    syscw = int(line.split()[1])
+            return read_bytes, write_bytes, syscr, syscw
+    except (FileNotFoundError, IOError, ValueError):
+        return 0, 0, 0, 0
+
+def get_process_name(pid):
+    """
+    Get the process name (comm) for a process from /proc/[pid]/comm
+    """
+    try:
+        with open(f'/proc/{pid}/comm', 'r') as f:
+            return f.read().strip()
+    except (FileNotFoundError, IOError):
+        return '[unknown]'
+
+def get_all_processes():
+    """
+    Get a list of all process PIDs
+    """
+    pids = []
+    for proc_dir in glob.glob('/proc/[0-9]*'):
+        try:
+            pid = int(os.path.basename(proc_dir))
+            pids.append(pid)
+        except ValueError:
+            continue
+    return pids
+
+def format_bytes(bytes_val):
+    """
+    Format bytes into human-readable format
+    """
+    if bytes_val >= 1024 * 1024 * 1024:
+        return f"{bytes_val / (1024 * 1024 * 1024):.2f}G"
+    elif bytes_val >= 1024 * 1024:
+        return f"{bytes_val / (1024 * 1024):.2f}M"
+    elif bytes_val >= 1024:
+        return f"{bytes_val / 1024:.2f}K"
+    else:
+        return f"{bytes_val}B"
+
+def format_calls(calls):
+    """
+    Format calls for display
+    """
+    if calls == 0:
+        return "0"
+    elif calls >= 1000000:
+        return f"{calls/1000000:.2f}M"
+    elif calls >= 1000:
+        return f"{calls/1000:.2f}K"
+    else:
+        return f"{calls:.1f}"
+
+def format_throughput(bytes_per_sec):
+    """
+    Format throughput in human-readable format
+    """
+    if bytes_per_sec >= 1024 * 1024 * 1024:
+        return f"{bytes_per_sec / (1024 * 1024 * 1024):.2f} GB/s"
+    elif bytes_per_sec >= 1024 * 1024:
+        return f"{bytes_per_sec / (1024 * 1024):.2f} MB/s"
+    elif bytes_per_sec >= 1024:
+        return f"{bytes_per_sec / 1024:.2f} KB/s"
+    else:
+        return f"{bytes_per_sec:.1f} B/s"
+
+def print_process_io(processes_io, interval, max_count=10):
+    """
+    Print I/O statistics for processes
+    """
+    
+    # Sort by total I/O (read + write) descending
+    sorted_processes = sorted(processes_io, key=lambda x: x['total_bytes_per_sec'], reverse=True)
+    
+    # Display header
+    print(f"\nPROCESS I/O STATISTICS")
+    print("-" * 80)
+    print(f"{'PID':<8} {'Read Calls/s':<13} {'Write Calls/s':<14} "
+          f"{'Read B/s':<14} {'Write B/s':<14} {'Name':<20}")
+    print("-" * 80)
+    
+    count = 0
+    for proc in sorted_processes:
+        #if proc['read_bytes_per_sec'] == 0 and proc['write_bytes_per_sec'] == 0:
+        #    continue
+        
+        if count >= max_count:
+            break
+        
+        read_calls = format_calls(proc['read_calls_per_sec'])
+        write_calls = format_calls(proc['write_calls_per_sec'])
+        read_throughput = format_throughput(proc['read_bytes_per_sec'])
+        write_throughput = format_throughput(proc['write_bytes_per_sec'])
+        
+        name = proc['name']
+        if len(name) > 20:
+            name = name[:17] + "..."
+        
+        print(f"{proc['pid']:<8} {read_calls:<13} {write_calls:<14} "
+              f"{read_throughput:<14} {write_throughput:<14} {name:<20}")
+        count += 1
+    
+    total_read = sum(p['read_bytes_per_sec'] for p in sorted_processes)
+    total_write = sum(p['write_bytes_per_sec'] for p in sorted_processes)
+    total_read_calls = format_calls(sum(p['read_calls_per_sec'] for p in sorted_processes))
+    total_write_calls = format_calls(sum(p['write_calls_per_sec'] for p in sorted_processes))
+    total_read_mb_s = total_read / (1024 * 1024)
+    total_write_mb_s = total_write / (1024 * 1024)
+    total_read_throughput = format_throughput(total_read)
+    total_write_throughput = format_throughput(total_write)
+    
+
 def read_cpu_stats():
     """
     Read the first line (total cpu stats) from /proc/stat
@@ -474,7 +606,7 @@ def format_disk_metrics(metrics):
         return "  No disk metrics available"
     
     output = []
-    output.append("DISK I/O STATISTICS")
+    output.append("\nDISK I/O STATISTICS")
     output.append("-" * 80)
     output.append(f"{'Device':<10} {'Read IOPS':<10} {'Write IOPS':<10} {'Total IOPS':<10} "
                   f"{'Read MB/s':<10} {'Write MB/s':<10} {'Util%':<8} {'Avg Q'}")
@@ -547,6 +679,7 @@ def print_memory_metrics(mem_stats):
 def print_load_avg(load1, load5, load15, running, blocked, total):
     """Print load average in a formatted way"""
     output = []
+    output.append(f"{'TIME':<15}: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     output.append(f"{'HOSTNAME':<15}: {socket.gethostname()}")
     output.append(f"{'LOAD AVERAGE':<15}: "
                   f"{load1:<6.2f} "
@@ -581,14 +714,15 @@ def main():
     
     # Print header based on PSI availability
     if psi_available:
-        header = f"{'Timestamp':<20} {'%iowait':<10} {'Blocked':<10} {'PSI IO 10s':<12} {'PSI IO 60s':<12} {'PSI IO 300s'}"
+        header = f"{'%iowait':<10} {'Blocked':<10} {'PSI IO 10s':<12} {'PSI IO 60s':<12} {'PSI IO 300s'}"
         separator = "-" * 85
     else:
-        header = f"{'Timestamp':<20} {'%iowait':<10} {'Blocked':<10}"
+        header = f"{'%iowait':<10} {'Blocked':<10}"
         separator = "-" * 45
     
     try:
         # First readings
+        prev_io = {}
         stats1, _ = read_cpu_stats()
         disk_stats1 = get_disk_stats()
         
@@ -599,7 +733,6 @@ def main():
             # Print header
             print("SYSTEM INFO")
             print(separator)
-            print()
 
             # --- CPU Metrics ---
             stats2, procs_blocked = read_cpu_stats()
@@ -615,21 +748,20 @@ def main():
             # --- Memory Metrics ---
             mem_stats = get_memory_stats()
             print(print_memory_metrics(mem_stats))
-            print()
-
-            print("═" * len(separator))
-            print()
+            #print()
+            #print("═" * len(separator))
+            #print()
 
             # --- Disk I/O Metrics ---
             disk_stats2 = get_disk_stats()
             disk_metrics = calculate_disk_metrics(disk_stats1, disk_stats2, interval)
             print(format_disk_metrics(disk_metrics))
-            print()
-            print("═" * len(separator))
-            print()
+            #print()
+            #print("═" * len(separator))
+            #print()
 
             # --- System I/O Metrics ---
-            print("SYSTEM I/O METRICS")
+            print("\nSYSTEM I/O STATISTICS")
             print(separator)
             print(header)
             print(separator)
@@ -641,28 +773,86 @@ def main():
             avg10, avg60, avg300, total = read_psi_io()
             
             # Display the metrics
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             
             if psi_available:
-                print(f"{timestamp:<20} {iowait_pct:>6.2f}%   {procs_blocked:>8}   "
+                print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}   "
                       f"{format_psi_value(avg10):>10}   {format_psi_value(avg60):>10}   "
                       f"{format_psi_value(avg300):>10}")
             else:
-                print(f"{timestamp:<20} {iowait_pct:>6.2f}%   {procs_blocked:>8}")
+                print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}")
             
-            print()
-            print("═" * len(separator))
-            print()
+            #print()
+            #print("═" * len(separator))
+            #print()
             
-            # --- Blocked Processes ---
-            print("BLOCKED PROCESSES (Uninterruptible Sleep - 'D' state)")
-            print("-" * len(separator))
-            blocked_procs = get_blocked_processes()
-            print_blocked_processes(blocked_procs)
+            pids = get_all_processes()
+            
+            current_io = {}
+            for pid in pids:
+                read_bytes, write_bytes, syscr, syscw = get_process_io(pid)
+                if read_bytes > 0 or write_bytes > 0 or syscr > 0 or syscw > 0:
+                    name = get_process_name(pid)
+                    current_io[pid] = {
+                        'read_bytes': read_bytes,
+                        'write_bytes': write_bytes,
+                        'syscr': syscr,
+                        'syscw': syscw,
+                        'name': name
+                    }
+            # Calculate rates
+            processes_io = []
+            if prev_io:
+                for pid, stats in current_io.items():
+                    if pid in prev_io:
+                        prev_stats = prev_io[pid]
+                        # Handle counter wrap (shouldn't happen for /proc/pid/io)
+                        read_delta = stats['read_bytes'] - prev_stats['read_bytes']
+                        write_delta = stats['write_bytes'] - prev_stats['write_bytes']
+                        syscr_delta = stats['syscr'] - prev_stats['syscr']
+                        syscw_delta = stats['syscw'] - prev_stats['syscw']
+                        
+                        # If the process was restarted, counters might be lower
+                        if read_delta < 0:
+                            read_delta = stats['read_bytes']
+                        if write_delta < 0:
+                            write_delta = stats['write_bytes']
+                        if syscr_delta < 0:
+                            syscr_delta = stats['syscr']
+                        if syscw_delta < 0:
+                            syscw_delta = stats['syscw']
+                        
+                        read_per_sec = read_delta / interval
+                        write_per_sec = write_delta / interval
+                        read_calls_per_sec = syscr_delta / interval
+                        write_calls_per_sec = syscw_delta / interval
+                        
+                        # Only include processes with non-zero I/O (for display)
+                        if True or read_per_sec > 0 or write_per_sec > 0:
+                            processes_io.append({
+                                'pid': pid,
+                                'read_bytes_per_sec': read_per_sec,
+                                'write_bytes_per_sec': write_per_sec,
+                                'total_bytes_per_sec': read_per_sec + write_per_sec,
+                                'read_calls_per_sec': read_calls_per_sec,
+                                'write_calls_per_sec': write_calls_per_sec,
+                                'total_calls_per_sec': read_calls_per_sec + write_calls_per_sec,
+                                'name': stats['name']
+                            })
+                            
+            #breakpoint()
+            # Print statistics
+            print_process_io(processes_io, interval)
+
+            ## # --- Blocked Processes ---
+            ## print("BLOCKED PROCESSES (Uninterruptible Sleep - 'D' state)")
+            ## print("-" * len(separator))
+            ## blocked_procs = get_blocked_processes()
+            ## print_blocked_processes(blocked_procs)
             
             # Shift the stats for the next iteration
             stats1 = stats2
             disk_stats1 = disk_stats2
+            prev_io = current_io
             
             # Wait for the next interval
             time.sleep(interval)
