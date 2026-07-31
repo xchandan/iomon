@@ -292,10 +292,6 @@ def format_psi_value(value):
         return "N/A"
     return f"{value:>6.2f}%"
 
-def clear_screen():
-    """Clear the terminal screen"""
-    os.system('clear' if os.name == 'posix' else 'cls')
-
 def get_disk_stats():
     """
     Read disk statistics from /proc/diskstats
@@ -560,9 +556,17 @@ def main():
         stats1, _ = read_cpu_stats()
         disk_stats1 = get_disk_stats()
         
+        # ANSI escape sequences for cursor control
+        CURSOR_HOME = '\033[H'  # Move cursor to home position
+        CLEAR_SCREEN = '\033[2J'  # Clear entire screen
+        
+        # Clear screen once at the start
+        sys.stdout.write(CLEAR_SCREEN)
+        sys.stdout.flush()
+        
         while True:
-            # Clear screen for better display
-            clear_screen()
+            # Move cursor to home position (top-left) without clearing
+            sys.stdout.write(CURSOR_HOME)
 
             # Initialize output buffer
             output_lines = []
@@ -652,8 +656,9 @@ def main():
             # Print statistics
             output_lines.extend(get_process_io_lines(processes_io, interval))
 
-            # Print everything at once
-            print('\n'.join(output_lines))
+            # Write everything at once and flush
+            sys.stdout.write('\n'.join(output_lines))
+            sys.stdout.flush()
 
             # Shift the stats for the next iteration
             stats1 = stats2
@@ -664,7 +669,9 @@ def main():
             time.sleep(interval)
             
     except KeyboardInterrupt:
-        print("\nExiting...")
+        # Move cursor to bottom and print exit message
+        sys.stdout.write('\n\nExiting...\n')
+        sys.stdout.flush()
         sys.exit(0)
 
 if __name__ == "__main__":
