@@ -284,107 +284,6 @@ def get_cpu_percent(stats1, stats2):
         'total_used': 100 - ((delta_idle / total) * 100)
     }
 
-def get_blocked_processes():
-    """
-    Get detailed information about processes in 'D' (uninterruptible sleep) state.
-    Returns a list of dictionaries with process details.
-    """
-    blocked_procs = []
-    
-    for proc_dir in glob.glob('/proc/[0-9]*'):
-        pid = os.path.basename(proc_dir)
-        try:
-            # Read the status file
-            with open(os.path.join(proc_dir, 'status'), 'r') as f:
-                state = None
-                name = None
-                ppid = None
-                
-                for line in f:
-                    if line.startswith('State:'):
-                        parts = line.strip().split()
-                        state = parts[1]
-                        if len(parts) > 2:
-                            # Remove parentheses from description
-                            state_desc = ' '.join(parts[2:]).strip('()')
-                    elif line.startswith('Name:'):
-                        name = line.strip().split()[1]
-                    elif line.startswith('PPid:'):
-                        ppid = line.strip().split()[1]
-                
-                # If process is in 'D' state, gather more info
-                if state == 'D':
-                    # Try to get command line and wait_on
-                    cmdline = ''
-                    try:
-                        with open(os.path.join(proc_dir, 'cmdline'), 'r') as f:
-                            cmdline = f.read().replace('\x00', ' ').strip()
-                    except:
-                        pass
-                    
-                    wait_on = analyze_blocking_resource(pid) 
-
-                    
-                    # Try to get I/O statistics
-                    io_read = 0
-                    io_write = 0
-                    try:
-                        with open(os.path.join(proc_dir, 'io'), 'r') as f:
-                            for line in f:
-                                if line.startswith('read_bytes:'):
-                                    io_read = int(line.split()[1])
-                                elif line.startswith('write_bytes:'):
-                                    io_write = int(line.split()[1])
-                    except:
-                        pass
-                    
-                    blocked_procs.append({
-                        'pid': pid,
-                        'ppid': ppid,
-                        'name': name or 'unknown',
-                        'state': state,
-                        'state_desc': state_desc if 'state_desc' in locals() else 'disk sleep',
-                        'cmdline': cmdline or '[%s]' % (name or 'unknown'),
-                        'wait_on': wait_on or 'unknown',
-                        'io_read': io_read,
-                        'io_write': io_write
-                    })
-                    
-        except (IOError, FileNotFoundError, ValueError):
-            # Process might have terminated while we were reading
-            continue
-    
-    # Sort by PID
-    return sorted(blocked_procs, key=lambda x: int(x['pid']))
-
-def analyze_blocking_resource(pid):
-    """Attempt to identify the resource a blocked process is waiting on."""
-    resource_hint = None
-    stack_trace = []
-    try:
-        with open(f'/proc/{pid}/stack', 'r') as f:
-            stack_trace = f.readlines()
-    except:
-        pass
-
-    for line in stack_trace:
-        # Check for file system or lock hints in the kernel stack
-        if 'ext4' in line or 'xfs' in line or 'btrfs' in line:
-            resource_hint = 'filesystem'
-            break
-        elif 'nfs' in line:
-            resource_hint = 'NFS'
-            break
-        elif 'mutex' in line or 'rwsem' in line:
-            resource_hint = 'kernel mutex/semaphore'
-            break
-        elif 'bio' in line:
-            resource_hint = 'block I/O'
-            break
-    if not resource_hint:
-        resource_hint = stack_trace
-    return resource_hint
-
 def calculate_total_time(stats):
     """
     Calculate total CPU time from stats.
@@ -681,14 +580,22 @@ def print_load_avg(load1, load5, load15, running, blocked, total):
     output = []
     output.append(f"{'TIME':<15}: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     output.append(f"{'HOSTNAME':<15}: {socket.gethostname()}")
+    output.append(f"{'TASKS':<15}: "
+                  f"{running}[Running]/{blocked}[Blocked]/{total}[Total]")
     output.append(f"{'LOAD AVERAGE':<15}: "
                   f"{load1:<6.2f} "
                   f"{load5:<6.2f} "
                   f"{load15:<6.2f}")
 
-    output.append(f"{'TASKS':<15}: "
-                  f"{running}[Running]/{blocked}[Blocked]/{total}[Total]")
     
+    return '\n'.join(output)
+
+def print_io_psi(avg10, avg60, avg300, total):
+    output = []
+    output.append(f"{'I/O PSI':<15}: "
+                  f"{avg10:<6.2f} "
+                  f"{avg60:<6.2f} "
+                  f"{avg300:<6.2f}")
     return '\n'.join(output)
 
 def main():
@@ -741,7 +648,11 @@ def main():
             load1, load5, load15, running, total = get_load_avg()
             print(print_load_avg(load1, load5, load15, running, procs_blocked, total))
 
+            # Read PSI I/O metrics
+            avg10, avg60, avg300, total = read_psi_io()
+            print(print_io_psi(avg10, avg60, avg300, total))
 
+            print()
             cpu_metrics = get_cpu_percent(stats1, stats2)
             print(print_cpu_metrics(cpu_metrics))
 
@@ -760,27 +671,29 @@ def main():
             #print("═" * len(separator))
             #print()
 
+
             # --- System I/O Metrics ---
-            print("\nSYSTEM I/O STATISTICS")
-            print(separator)
-            print(header)
-            print(separator)
-            
-            # Calculate iowait percentage
-            iowait_pct = calculate_iowait_percent(stats1, stats2)
-            
-            # Read PSI I/O metrics
-            avg10, avg60, avg300, total = read_psi_io()
+            #print("\nSYSTEM I/O STATISTICS")
+            #print(separator)
+            #print(header)
+            #print(separator)
+            #
+            ## Calculate iowait percentage
+            #iowait_pct = calculate_iowait_percent(stats1, stats2)
+            #
+            ## Read PSI I/O metrics
+            #avg10, avg60, avg300, total = read_psi_io()
+            #print(print_io_psi(avg10, avg60, avg300, total))
             
             # Display the metrics
             
-            if psi_available:
-                print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}   "
-                      f"{format_psi_value(avg10):>10}   {format_psi_value(avg60):>10}   "
-                      f"{format_psi_value(avg300):>10}")
-            else:
-                print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}")
-            
+            #if psi_available:
+            #    print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}   "
+            #          f"{format_psi_value(avg10):>10}   {format_psi_value(avg60):>10}   "
+            #          f"{format_psi_value(avg300):>10}")
+            #else:
+            #    print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}")
+            #
             #print()
             #print("═" * len(separator))
             #print()
@@ -843,12 +756,6 @@ def main():
             # Print statistics
             print_process_io(processes_io, interval)
 
-            ## # --- Blocked Processes ---
-            ## print("BLOCKED PROCESSES (Uninterruptible Sleep - 'D' state)")
-            ## print("-" * len(separator))
-            ## blocked_procs = get_blocked_processes()
-            ## print_blocked_processes(blocked_procs)
-            
             # Shift the stats for the next iteration
             stats1 = stats2
             disk_stats1 = disk_stats2
