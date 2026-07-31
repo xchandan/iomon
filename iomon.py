@@ -7,6 +7,25 @@ import socket
 import subprocess
 from datetime import datetime
 
+# ANSI color codes for highlighting
+class Colors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    
+    # White background with black text for highlighting
+    HIGHLIGHT = '\033[47m\033[30m'  # White background, black text
+    HIGHLIGHT_BOLD = '\033[47m\033[30;1m'  # White background, bold black text
+
+# Check environment variable for disabling highlights
+DISABLE_HIGHLIGHT = os.environ.get('IOMON_NO_HIGHLIGHT', '').lower() in ('1', 'true', 'yes', 'on')
+
 KB = 1024
 MB = KB * 1024
 GB = MB * 1024
@@ -429,9 +448,17 @@ def calculate_disk_metrics(stats1, stats2, interval):
     
     return metrics
 
+def highlight_value(value_str):
+    """
+    Apply white background highlight if not disabled
+    """
+    if DISABLE_HIGHLIGHT:
+        return value_str
+    return f"{Colors.HIGHLIGHT}{value_str}{Colors.ENDC}"
+
 def get_disk_lines(metrics):
     """
-    Return disk metrics as a list of strings
+    Return disk metrics as a list of strings with highlighted values
     """
     if not metrics:
         return ["  No disk metrics available"]
@@ -444,13 +471,18 @@ def get_disk_lines(metrics):
     lines.append("-" * 80)
     
     for device, stats in sorted(metrics.items()):
+        # Highlight Total IOPS, Read MB/s, and Write MB/s
+        total_iops_str = highlight_value(f"{stats['total_iops']:<10.1f}")
+        read_mb_str = highlight_value(f"{stats['read_mb_s']:<10.2f}")
+        write_mb_str = highlight_value(f"{stats['write_mb_s']:<10.2f}")
+        
         lines.append(
             f"{device:<10} "
             f"{stats['read_iops']:<10.1f} "
             f"{stats['write_iops']:<10.1f} "
-            f"{stats['total_iops']:<10.1f} "
-            f"{stats['read_mb_s']:<10.2f} "
-            f"{stats['write_mb_s']:<10.2f} "
+            f"{total_iops_str} "
+            f"{read_mb_str} "
+            f"{write_mb_str} "
             f"{stats['utilization']:<8.2f}% "
             f"{stats['avg_queue_size']:<6.2f}"
         )
@@ -462,13 +494,14 @@ def get_cpu_lines(cpu_metrics):
     if not cpu_metrics:
         return ["  CPU metrics not available"]
     
+    nproc = subprocess.check_output('nproc', encoding='utf-8').rstrip('\n')
     lines = []
-    lines.append(f"{'CPU USAGE':<15}: "
-                f"{'User':<5} {cpu_metrics['user']:>3.1f}% "
-                f"{'Sys':<5} {cpu_metrics['system']:>3.1f}% "
-                f"{'IOwt':<5} {cpu_metrics['iowait']:>3.1f}% "
-                f"{'Idle':<5} {cpu_metrics['idle']:>3.1f}% "
-                f"{'Used':<5} {cpu_metrics['total_used']:>3.1f}%")
+    lines.append(f"{'CPU USAGE ['+nproc+']':<15}: "
+                f"{'User':<5} {cpu_metrics['user']:>3.2f}% "
+                f"{'Sys':<5} {cpu_metrics['system']:>3.2f}% "
+                f"{'IOwt':<5} {cpu_metrics['iowait']:>3.2f}% "
+                f"{'Idle':<5} {cpu_metrics['idle']:>3.2f}% "
+                f"{'Used':<5} {cpu_metrics['total_used']:>3.2f}%")
 
     return lines
 
@@ -508,29 +541,46 @@ def get_memory_lines(mem_stats):
     return lines
 
 def get_load_lines(load1, load5, load15, running, blocked, total):
-    """Return load average as a list of strings"""
+    """Return load average as a list of strings with highlighted values"""
     lines = []
     lines.append(f"{'TIME':<15}: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"{'HOSTNAME':<15}: {socket.gethostname()}")
     lines.append(f"{'TASKS':<15}: "
                 f"{running}[Running]/{blocked}[Blocked]/{total}[Total]")
-    lines.append(f"{'LOAD AVERAGE':<15}: "
-                f"{load1:<6.2f} "
-                f"{load5:<6.2f} "
-                f"{load15:<6.2f}")
+    
+    # Highlight load average values
+    load1_str = highlight_value(f"{load1:<6.2f}")
+    load5_str = highlight_value(f"{load5:<6.2f}")
+    load15_str = highlight_value(f"{load15:<6.2f}")
+    
+    load_line = (f"{'LOAD AVERAGE':<15}: "
+                f"{load1_str} "
+                f"{load5_str} "
+                f"{load15_str}")
+    lines.append(load_line)
 
     return lines
 
 def get_psi_lines(avg10, avg60, avg300, total):
-    """Return PSI metrics as a list of strings"""
+    """Return PSI metrics as a list of strings with highlighted values"""
     lines = []
-    lines.append(f"{'I/O PSI':<15}: "
-                f"{avg10:<6.2f} "
-                f"{avg60:<6.2f} "
-                f"{avg300:<6.2f}")
+    # Highlight PSI values
+    avg10_str = highlight_value(f"{avg10:<6.2f}")
+    avg60_str = highlight_value(f"{avg60:<6.2f}")
+    avg300_str = highlight_value(f"{avg300:<6.2f}")
+    
+    psi_line = (f"{'I/O PSI':<15}: "
+               f"{avg10_str} "
+               f"{avg60_str} "
+               f"{avg300_str}")
+    lines.append(psi_line)
     return lines
 
 def main():
+    # Print highlight status if enabled
+    if not DISABLE_HIGHLIGHT:
+        print(f"Highlights enabled (white background). Set IOMON_NO_HIGHLIGHT=1 to disable.")
+    
     # Set the interval between measurements (in seconds)
     interval = 1.0
     
