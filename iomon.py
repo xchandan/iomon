@@ -7,6 +7,10 @@ import socket
 import subprocess
 from datetime import datetime
 
+KB = 1024
+MB = KB * 1024
+GB = MB * 1024
+
 def get_process_io(pid):
     """
     Read I/O statistics for a process from /proc/[pid]/io
@@ -58,12 +62,12 @@ def format_bytes(bytes_val):
     """
     Format bytes into human-readable format
     """
-    if bytes_val >= 1024 * 1024 * 1024:
-        return f"{bytes_val / (1024 * 1024 * 1024):.2f}G"
-    elif bytes_val >= 1024 * 1024:
-        return f"{bytes_val / (1024 * 1024):.2f}M"
-    elif bytes_val >= 1024:
-        return f"{bytes_val / 1024:.2f}K"
+    if bytes_val >= GB:
+        return f"{bytes_val / GB:.2f}G"
+    elif bytes_val >= MB:
+        return f"{bytes_val / MB:.2f}M"
+    elif bytes_val >= KB:
+        return f"{bytes_val / KB:.2f}K"
     else:
         return f"{bytes_val}B"
 
@@ -84,14 +88,7 @@ def format_throughput(bytes_per_sec):
     """
     Format throughput in human-readable format
     """
-    if bytes_per_sec >= 1024 * 1024 * 1024:
-        return f"{bytes_per_sec / (1024 * 1024 * 1024):.2f} GB/s"
-    elif bytes_per_sec >= 1024 * 1024:
-        return f"{bytes_per_sec / (1024 * 1024):.2f} MB/s"
-    elif bytes_per_sec >= 1024:
-        return f"{bytes_per_sec / 1024:.2f} KB/s"
-    else:
-        return f"{bytes_per_sec:.1f} B/s"
+    return f"{format_bytes(bytes_per_sec)}/s"
 
 def print_process_io(processes_io, interval, max_count=10):
     """
@@ -133,8 +130,8 @@ def print_process_io(processes_io, interval, max_count=10):
     total_write = sum(p['write_bytes_per_sec'] for p in sorted_processes)
     total_read_calls = format_calls(sum(p['read_calls_per_sec'] for p in sorted_processes))
     total_write_calls = format_calls(sum(p['write_calls_per_sec'] for p in sorted_processes))
-    total_read_mb_s = total_read / (1024 * 1024)
-    total_write_mb_s = total_write / (1024 * 1024)
+    total_read_mb_s = total_read / MB
+    total_write_mb_s = total_write / MB
     total_read_throughput = format_throughput(total_read)
     total_write_throughput = format_throughput(total_write)
     
@@ -231,7 +228,7 @@ def get_memory_stats():
                     continue
                 key = parts[0].rstrip(':')
                 value = int(parts[1])
-                mem_stats[key] = value
+                mem_stats[key] = value * KB
     except Exception as e:
         return {}
     
@@ -290,24 +287,6 @@ def calculate_total_time(stats):
     """
     return sum(stats[:8])  # Sum first 8 fields
 
-def calculate_iowait_percent(stats1, stats2):
-    """
-    Calculate iowait percentage between two samples
-    """
-    total1 = calculate_total_time(stats1)
-    total2 = calculate_total_time(stats2)
-    
-    iowait1 = stats1[4]  # iowait is the 5th field (index 4)
-    iowait2 = stats2[4]
-    
-    delta_total = total2 - total1
-    delta_iowait = iowait2 - iowait1
-    
-    if delta_total <= 0:
-        return 0.0
-    
-    return (delta_iowait / delta_total) * 100
-
 def format_psi_value(value):
     """Format PSI value for display, handling None values"""
     if value is None:
@@ -317,48 +296,6 @@ def format_psi_value(value):
 def clear_screen():
     """Clear the terminal screen"""
     os.system('clear' if os.name == 'posix' else 'cls')
-
-def print_blocked_processes(blocked_procs):
-    """Print detailed information about blocked processes"""
-    if not blocked_procs:
-        print(f"  Found {len(blocked_procs)} blocked process(es):\n")
-        return
-    
-    print(f"  Found {len(blocked_procs)} blocked process(es):\n")
-    print(f"  {'PID':<8} {'PPID':<8} {'State':<5} {'I/O Read':<15} {'I/O Write':<15} {'Waiting On':<15} {'Name'}")
-    print(f"  {'-'*8} {'-'*8} {'-'*5} {'-'*15} {'-'*15} {'-'*15} {'-'*10}")
-    
-    for proc in blocked_procs:
-        # Format I/O sizes in human-readable format
-        io_read = proc['io_read']
-        io_write = proc['io_write']
-        
-        if io_read >= 1024*1024*1024:
-            read_str = f"{io_read/(1024*1024*1024):.1f}G"
-        elif io_read >= 1024*1024:
-            read_str = f"{io_read/(1024*1024):.1f}M"
-        elif io_read >= 1024:
-            read_str = f"{io_read/1024:.1f}K"
-        else:
-            read_str = f"{io_read}B"
-            
-        if io_write >= 1024*1024*1024:
-            write_str = f"{io_write/(1024*1024*1024):.1f}G"
-        elif io_write >= 1024*1024:
-            write_str = f"{io_write/(1024*1024):.1f}M"
-        elif io_write >= 1024:
-            write_str = f"{io_write/1024:.1f}K"
-        else:
-            write_str = f"{io_write}B"
-        
-        # Truncate cmdline for display if too long
-        cmdline = proc['cmdline']
-        if len(cmdline) > 40:
-            cmdline = cmdline[:37] + '...'
-        
-        print(f"  {proc['pid']:<8} {proc['ppid']:<8} {proc['state']:<5} "
-              f"{read_str:<15} {write_str:<15} {proc['wait_on']:<15} {proc['name']}")
-
 
 def get_disk_stats():
     """
@@ -465,8 +402,8 @@ def calculate_disk_metrics(stats1, stats2, interval):
         
         # Calculate throughput (MB/s)
         # Each sector is 512 bytes
-        read_mb_s = (delta_sectors_read * 512) / (1024 * 1024 * interval) if interval > 0 else 0
-        write_mb_s = (delta_sectors_written * 512) / (1024 * 1024 * interval) if interval > 0 else 0
+        read_mb_s = (delta_sectors_read * 512) / (MB * interval) if interval > 0 else 0
+        write_mb_s = (delta_sectors_written * 512) / (MB * interval) if interval > 0 else 0
         total_mb_s = read_mb_s + write_mb_s
         
         # Calculate average latency (ms per operation)
@@ -548,28 +485,29 @@ def print_memory_metrics(mem_stats):
     output = []
 
     # Memory
-    mem_total = mem_stats.get('MemTotal', 0) / (1024 * 1024)  # Convert to GB
-    mem_used = mem_stats.get('MemUsed', 0) / (1024 * 1024)
-    mem_available = mem_stats.get('MemAvailable', 0) / (1024 * 1024)
+    mem_total = format_bytes(mem_stats.get('MemTotal', 0))
+    mem_used = format_bytes(mem_stats.get('MemUsed', 0))
+    mem_available = format_bytes(mem_stats.get('MemAvailable', 0))
     mem_used_pct = mem_stats.get('MemUsedPercent', 0)
     
     output.append(f"{'MEMORY USAGE':<15}: "
-                  f"{'Total':<5} {mem_total:>6.2f}G "
-                  f"{'Used':<5} {mem_used:>6.2f}G "
-                  f"{'Avail':<5} {mem_available:>6.2f}G "
+                  f"{'Total':<5} {mem_total:>8} "
+                  f"{'Used':<5} {mem_used:>8} "
+                  f"{'Avail':<5} {mem_available:>8} "
                   f"{'Used%':<5} {mem_used_pct:>6.1f}%")
 
     # Swap
-    swap_total = mem_stats.get('SwapTotal', 0) / (1024 * 1024)
-    if swap_total > 0:
-        swap_used = mem_stats.get('SwapUsed', 0) / (1024 * 1024)
-        swap_free = swap_total - swap_used
+    swap_total = format_bytes(mem_stats.get('SwapTotal', 0))
+    if swap_total != '0B':
+        swap_used = format_bytes(mem_stats.get('SwapUsed', 0))
+        swap_free = format_bytes(mem_stats.get('SwapTotal', 0)
+                                 - mem_stats.get('SwapUsed', 0))
         swap_used_pct = mem_stats.get('SwapUsedPercent', 0)
         
         output.append(f"{'SWAP USAGE':<15}: "
-                      f"{'Total':<5} {swap_total:>6.2f}G "
-                      f"{'Used':<5} {swap_used:>6.2f}G "
-                      f"{'Free':<5} {swap_free:>6.2f}G "
+                      f"{'Total':<5} {swap_total:>8} "
+                      f"{'Used':<5} {swap_used:>8} "
+                      f"{'Free':<5} {swap_free:>8} "
                       f"{'Used%':<5} {swap_used_pct:>6.1f}%")
 
     
@@ -611,20 +549,11 @@ def main():
     
     # Check if PSI is available
     psi_available = os.path.exists('/proc/pressure/io')
-    if not psi_available:
-        print("Note: PSI (Pressure Stall Information) is not available on this system.")
-        print("      This requires Linux kernel 4.20+ with CONFIG_PSI=y")
-        print()
-    
-    print(f"Monitoring system I/O metrics every {interval} second(s). Press Ctrl+C to stop.")
-    print()
     
     # Print header based on PSI availability
     if psi_available:
-        header = f"{'%iowait':<10} {'Blocked':<10} {'PSI IO 10s':<12} {'PSI IO 60s':<12} {'PSI IO 300s'}"
-        separator = "-" * 85
+        separator = "-" * 80
     else:
-        header = f"{'%iowait':<10} {'Blocked':<10}"
         separator = "-" * 45
     
     try:
@@ -659,44 +588,11 @@ def main():
             # --- Memory Metrics ---
             mem_stats = get_memory_stats()
             print(print_memory_metrics(mem_stats))
-            #print()
-            #print("═" * len(separator))
-            #print()
 
             # --- Disk I/O Metrics ---
             disk_stats2 = get_disk_stats()
             disk_metrics = calculate_disk_metrics(disk_stats1, disk_stats2, interval)
             print(format_disk_metrics(disk_metrics))
-            #print()
-            #print("═" * len(separator))
-            #print()
-
-
-            # --- System I/O Metrics ---
-            #print("\nSYSTEM I/O STATISTICS")
-            #print(separator)
-            #print(header)
-            #print(separator)
-            #
-            ## Calculate iowait percentage
-            #iowait_pct = calculate_iowait_percent(stats1, stats2)
-            #
-            ## Read PSI I/O metrics
-            #avg10, avg60, avg300, total = read_psi_io()
-            #print(print_io_psi(avg10, avg60, avg300, total))
-            
-            # Display the metrics
-            
-            #if psi_available:
-            #    print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}   "
-            #          f"{format_psi_value(avg10):>10}   {format_psi_value(avg60):>10}   "
-            #          f"{format_psi_value(avg300):>10}")
-            #else:
-            #    print(f"{iowait_pct:>6.2f}%   {procs_blocked:>8}")
-            #
-            #print()
-            #print("═" * len(separator))
-            #print()
             
             pids = get_all_processes()
             
@@ -752,7 +648,6 @@ def main():
                                 'name': stats['name']
                             })
                             
-            #breakpoint()
             # Print statistics
             print_process_io(processes_io, interval)
 
